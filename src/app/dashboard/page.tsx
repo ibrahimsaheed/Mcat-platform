@@ -1,28 +1,31 @@
-// WHY: This is a Server Component because we call supabase.auth.getUser()
-// server-side using the cookie-based session. No need for client-side
-// JavaScript to render the welcome message — faster initial load.
+// WHY: This is a Server Component that fetches the authenticated user and the
+// total question count server-side, then renders the dashboard welcome card
+// alongside navigation links (including the new Question Bank link).
+//
+// CONCEPT: We use Supabase Auth's getUser() for auth verification and Prisma
+// for the question count. Both run server-side so the user sees content
+// immediately without client-side loading states.
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { prisma } from "@/lib/prisma";
 import { SignOutButton } from "./sign-out-button";
+import { BookOpen, GraduationCap, ArrowRight } from "lucide-react";
 
-/**
- * Dashboard page — protected by middleware, shows the logged-in user's email.
- *
- * CONCEPT: We call getUser() (not getSession()) because getUser() verifies
- * the JWT with Supabase Auth API. The middleware already refreshed the session
- * cookie, so this call is efficient and reliable.
- */
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Safety check — if the middleware somehow let an unauthenticated request
-  // through (e.g., during development), redirect to login.
   if (!user) {
     redirect("/login");
   }
+
+  // Fetch the total question count for the dashboard card
+  const totalQuestions = await prisma.question.count({
+    where: { isActive: true },
+  });
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-4">
@@ -33,6 +36,40 @@ export default async function DashboardPage() {
         <p className="mb-6 text-sm text-zinc-500">
           You are signed in to your MCAT Platform account.
         </p>
+
+        {/* ── Question Bank Card ─────────────────────────────────── */}
+        <Link
+          href="/dashboard/questions"
+          className="mb-4 flex items-center gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800 min-h-[64px]"
+        >
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">
+            <BookOpen className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              Question Bank
+            </p>
+            <p className="text-xs text-zinc-500">
+              {totalQuestions} questions available
+            </p>
+          </div>
+          <ArrowRight className="h-5 w-5 text-zinc-400" />
+        </Link>
+
+        {/* ── MCAT Simulator Card (placeholder for future use) ──── */}
+        <div className="mb-6 flex items-center gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 opacity-50 dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-300">
+            <GraduationCap className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              MCAT Simulator
+            </p>
+            <p className="text-xs text-zinc-500">
+              Coming soon
+            </p>
+          </div>
+        </div>
 
         <div className="flex justify-center">
           <SignOutButton />

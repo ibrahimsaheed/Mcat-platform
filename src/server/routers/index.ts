@@ -2,6 +2,7 @@ import { router, publicProcedure } from "@/lib/trpc/server";
 import { z } from "zod";
 import { healthRouter } from "./health.router";
 import { authRouter } from "./auth.router";
+import { questionRouter } from "./question.router";
 
 /**
  * Echo procedure — validates input/output pipeline works.
@@ -25,6 +26,7 @@ const echo = publicProcedure
 export const appRouter = router({
   health: healthRouter,
   auth: authRouter,
+  question: questionRouter,
   echo,
 });
 
