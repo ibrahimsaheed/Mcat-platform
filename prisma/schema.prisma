@@ -1,0 +1,944 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// USERS & ANALYTICS
+// ============================================================
+
+model User {
+  id           Int       @id @default(autoincrement())
+  supabaseId   String?   @unique
+  firstName    String
+  secondName   String?
+  thirdName    String?
+  email        String    @unique
+  passwordHash String
+  dateCreated  DateTime  @default(now())
+  lastLogin    DateTime?
+
+  // Relations
+  scoreAnalytics        ScoreAnalytics[]
+  quizAttempts          UserQuizAttempt[]
+  simulatedExamAttempts UserSimulatedExamAttempt[]
+  questionBookmarks     QuestionBookmark[]
+  questionFeedback      QuestionFeedback[]
+  topicMastery          UserMcatTopicMastery[]
+  clinicalExperiences   ClinicalExperience[]
+  extracurriculars      ExtracurricularActivity[]
+  classes               Class[]
+  researchExperiences   ResearchExperience[]
+  studyPlans            StudyPlan[]
+  notifications         Notification[]
+  notificationPrefs     NotificationPreference?
+  settings              UserSetting?
+  schoolList            UserSchoolList[]
+  personalStatements    PersonalStatementDraft[]
+  streak                UserStreak?
+  createdQuizzes        Quiz[]
+  createdQuestions      Question[]
+  createdPracticeSets   DailyPracticeSet[]
+
+  @@map("users")
+}
+
+model ScoreAnalytics {
+  id               Int               @id @default(autoincrement())
+  userId           Int
+  categoryId       Int?
+  quizId           Int?
+  averageScore     Decimal?          @db.Decimal(5, 2)
+  bestScore        Int?
+  totalAttempts    Int               @default(0)
+  lastAttemptDate  DateTime?
+  improvementTrend ImprovementTrend?
+  scoreDelta       Decimal?          @db.Decimal(6, 2)
+  rollingAvgLast5  Decimal?          @db.Decimal(5, 2)
+  isStale          Boolean           @default(true)
+  calculatedDate   DateTime?
+
+  user     User              @relation(fields: [userId], references: [id])
+  category QuestionCategory? @relation(fields: [categoryId], references: [id])
+  quiz     Quiz?             @relation(fields: [quizId], references: [id])
+
+  @@map("score_analytics")
+}
+
+// ============================================================
+// CONTENT CATEGORIZATION
+// ============================================================
+
+model QuestionCategory {
+  id           Int      @id @default(autoincrement())
+  categoryName String
+  description  String?
+  isActive     Boolean  @default(true)
+  createdDate  DateTime @default(now())
+
+  questions      Question[]
+  quizzes        Quiz[]
+  scoreAnalytics ScoreAnalytics[]
+
+  @@map("question_categories")
+}
+
+model McatTopic {
+  id            Int     @id @default(autoincrement())
+  parentTopicId Int?
+  subject       Subject
+  topicName     String
+  subTopicName  String?
+  isActive      Boolean @default(true)
+
+  parent        McatTopic?             @relation("TopicHierarchy", fields: [parentTopicId], references: [id])
+  children      McatTopic[]            @relation("TopicHierarchy")
+  passages      Passage[]
+  questionMaps  QuestionTopicMap[]
+  studyPlanDays StudyPlanDay[]
+  topicMastery  UserMcatTopicMastery[]
+
+  @@map("mcat_topics")
+}
+
+// ============================================================
+// PASSAGES & QUESTIONS
+// ============================================================
+
+model Passage {
+  id            Int      @id @default(autoincrement())
+  subject       Subject
+  topicId       Int?
+  content       String
+  imageUrl      String?
+  attribution   String?
+  isAiGenerated Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  topic     McatTopic? @relation(fields: [topicId], references: [id])
+  questions Question[]
+
+  @@map("passages")
+}
+
+model Question {
+  id                 Int                @id @default(autoincrement())
+  passageId          Int?
+  categoryId         Int?
+  questionText       String
+  explanation        String?
+  questionType       QuestionType
+  difficultyLevel    Int?
+  pointValue         Int                @default(1)
+  timeLimit          Int?
+  isAiGenerated      Boolean            @default(false)
+  generationPrompt   String?
+  modelVersion       String?
+  verificationStatus VerificationStatus @default(PENDING)
+  isActive           Boolean            @default(true)
+  createdBy          Int?
+  createdDate        DateTime           @default(now())
+  lastModified       DateTime           @updatedAt
+
+  passage         Passage?                       @relation(fields: [passageId], references: [id])
+  category        QuestionCategory?              @relation(fields: [categoryId], references: [id])
+  creator         User?                          @relation(fields: [createdBy], references: [id])
+  options         QuestionOption[]
+  topicMaps       QuestionTopicMap[]
+  feedback        QuestionFeedback[]
+  quizQuestions   QuizQuestion[]
+  practiceQs      DailyPracticeQuestion[]
+  answerResponses UserAnswerResponse[]
+  bookmarks       QuestionBookmark[]
+  examResponses   SimulatedExamResponse[]
+  examSectionQs   SimulatedExamSectionQuestion[]
+
+  @@map("questions")
+}
+
+model QuestionOption {
+  id          Int     @id @default(autoincrement())
+  questionId  Int
+  optionText  String
+  isCorrect   Boolean @default(false)
+  optionOrder Int
+
+  question        Question                @relation(fields: [questionId], references: [id])
+  answerResponses UserAnswerResponse[]
+  examResponses   SimulatedExamResponse[]
+
+  @@map("question_options")
+}
+
+model QuestionTopicMap {
+  id         Int @id @default(autoincrement())
+  questionId Int
+  topicId    Int
+
+  question Question  @relation(fields: [questionId], references: [id])
+  topic    McatTopic @relation(fields: [topicId], references: [id])
+
+  @@unique([questionId, topicId])
+  @@map("question_topic_map")
+}
+
+model QuestionFeedback {
+  id           Int          @id @default(autoincrement())
+  userId       Int
+  questionId   Int
+  feedbackType FeedbackType
+  comment      String?
+  isResolved   Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@map("question_feedback")
+}
+
+model QuestionBookmark {
+  id         Int         @id @default(autoincrement())
+  userId     Int
+  questionId Int
+  tag        BookmarkTag @default(REVIEW_LATER)
+  note       String?
+  createdAt  DateTime    @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@unique([userId, questionId])
+  @@map("question_bookmarks")
+}
+
+// ============================================================
+// QUIZZES & ATTEMPTS
+// ============================================================
+
+model Quiz {
+  id             Int      @id @default(autoincrement())
+  quizName       String
+  description    String?
+  categoryId     Int?
+  totalQuestions Int      @default(0)
+  totalPoints    Int      @default(0)
+  timeLimit      Int?
+  createdBy      Int?
+  isActive       Boolean  @default(true)
+  createdDate    DateTime @default(now())
+
+  category       QuestionCategory? @relation(fields: [categoryId], references: [id])
+  creator        User?             @relation(fields: [createdBy], references: [id])
+  quizQuestions  QuizQuestion[]
+  attempts       UserQuizAttempt[]
+  scoreAnalytics ScoreAnalytics[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id            Int  @id @default(autoincrement())
+  quizId        Int
+  questionId    Int
+  questionOrder Int
+  pointOverride Int?
+
+  quiz     Quiz     @relation(fields: [quizId], references: [id])
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@unique([quizId, questionId])
+  @@map("quiz_questions")
+}
+
+model UserQuizAttempt {
+  id               Int           @id @default(autoincrement())
+  userId           Int
+  quizId           Int
+  attemptNumber    Int           @default(1)
+  startTime        DateTime
+  endTime          DateTime?
+  totalScore       Int?
+  maxPossibleScore Int?
+  percentageScore  Decimal?      @db.Decimal(5, 2)
+  status           AttemptStatus @default(IN_PROGRESS)
+  timeSpent        Int?
+
+  user      User                 @relation(fields: [userId], references: [id])
+  quiz      Quiz                 @relation(fields: [quizId], references: [id])
+  responses UserAnswerResponse[]
+
+  @@map("user_quiz_attempts")
+}
+
+model UserAnswerResponse {
+  id               Int      @id @default(autoincrement())
+  attemptId        Int
+  questionId       Int
+  userAnswer       String?
+  selectedOptionId Int?
+  confidenceLevel  Int?
+  pointsEarned     Int?
+  isCorrect        Boolean
+  responseTime     Int?
+  answeredAt       DateTime @default(now())
+
+  attempt        UserQuizAttempt @relation(fields: [attemptId], references: [id])
+  question       Question        @relation(fields: [questionId], references: [id])
+  selectedOption QuestionOption? @relation(fields: [selectedOptionId], references: [id])
+
+  @@map("user_answer_responses")
+}
+
+// ============================================================
+// DAILY PRACTICE
+// ============================================================
+
+model DailyPracticeSet {
+  id          Int      @id @default(autoincrement())
+  subject     Subject
+  datePosted  DateTime @db.Date
+  createdBy   Int?
+  description String?
+  isActive    Boolean  @default(true)
+
+  creator   User?                   @relation(fields: [createdBy], references: [id])
+  questions DailyPracticeQuestion[]
+
+  @@map("daily_practice_sets")
+}
+
+model DailyPracticeQuestion {
+  id            Int @id @default(autoincrement())
+  practiceSetId Int
+  questionId    Int
+
+  practiceSet DailyPracticeSet @relation(fields: [practiceSetId], references: [id])
+  question    Question         @relation(fields: [questionId], references: [id])
+
+  @@unique([practiceSetId, questionId])
+  @@map("daily_practice_questions")
+}
+
+// ============================================================
+// SIMULATED FULL-LENGTH EXAMS
+// ============================================================
+
+model SimulatedExamTemplate {
+  id               Int      @id @default(autoincrement())
+  templateName     String
+  description      String?
+  totalSections    Int      @default(4)
+  totalQuestions   Int      @default(230)
+  totalTimeMins    Int      @default(450)
+  isOfficialFormat Boolean  @default(true)
+  createdBy        Int?
+  createdAt        DateTime @default(now())
+
+  sections SimulatedExamSection[]
+  attempts UserSimulatedExamAttempt[]
+
+  @@map("simulated_exam_templates")
+}
+
+model SimulatedExamSection {
+  id            Int     @id @default(autoincrement())
+  templateId    Int
+  sectionOrder  Int
+  sectionName   String
+  sectionCode   String
+  numQuestions  Int
+  timeLimitMins Int
+  subject       Subject
+
+  template  SimulatedExamTemplate          @relation(fields: [templateId], references: [id])
+  questions SimulatedExamSectionQuestion[]
+  results   UserSimulatedSectionResult[]
+  responses SimulatedExamResponse[]
+
+  @@map("simulated_exam_sections")
+}
+
+model SimulatedExamSectionQuestion {
+  id            Int @id @default(autoincrement())
+  sectionId     Int
+  questionId    Int
+  questionOrder Int
+
+  section  SimulatedExamSection @relation(fields: [sectionId], references: [id])
+  question Question             @relation(fields: [questionId], references: [id])
+
+  @@unique([sectionId, questionId])
+  @@map("simulated_exam_section_questions")
+}
+
+model UserSimulatedExamAttempt {
+  id             Int           @id @default(autoincrement())
+  userId         Int
+  templateId     Int
+  attemptNumber  Int           @default(1)
+  startTime      DateTime
+  endTime        DateTime?
+  status         AttemptStatus @default(IN_PROGRESS)
+  scoreCp        Int?
+  scoreCars      Int?
+  scoreBb        Int?
+  scorePs        Int?
+  totalScore     Int?
+  percentileRank Decimal?      @db.Decimal(5, 2)
+  timeSpentMins  Int?
+
+  user           User                         @relation(fields: [userId], references: [id])
+  template       SimulatedExamTemplate        @relation(fields: [templateId], references: [id])
+  sectionResults UserSimulatedSectionResult[]
+  responses      SimulatedExamResponse[]
+
+  @@map("user_simulated_exam_attempts")
+}
+
+model UserSimulatedSectionResult {
+  id            Int           @id @default(autoincrement())
+  attemptId     Int
+  sectionId     Int
+  rawScore      Int
+  scaledScore   Int?
+  timeSpentMins Int?
+  status        SectionStatus @default(NOT_STARTED)
+
+  attempt UserSimulatedExamAttempt @relation(fields: [attemptId], references: [id])
+  section SimulatedExamSection     @relation(fields: [sectionId], references: [id])
+
+  @@map("user_simulated_section_results")
+}
+
+model SimulatedExamResponse {
+  id               Int       @id @default(autoincrement())
+  attemptId        Int
+  sectionId        Int
+  questionId       Int
+  selectedOptionId Int?
+  isCorrect        Boolean
+  isFlagged        Boolean   @default(false)
+  confidenceLevel  Int?
+  responseTimeSecs Int?
+  answeredAt       DateTime?
+
+  attempt        UserSimulatedExamAttempt @relation(fields: [attemptId], references: [id])
+  section        SimulatedExamSection     @relation(fields: [sectionId], references: [id])
+  question       Question                 @relation(fields: [questionId], references: [id])
+  selectedOption QuestionOption?          @relation(fields: [selectedOptionId], references: [id])
+
+  @@map("simulated_exam_responses")
+}
+
+// ============================================================
+// CLINICAL & ACADEMIC TRACKING
+// ============================================================
+
+model ClinicalExperience {
+  id                Int            @id @default(autoincrement())
+  userId            Int
+  experienceType    ExperienceType
+  organizationName  String
+  location          String?
+  supervisorName    String?
+  supervisorContact String?
+  startDate         DateTime       @db.Date
+  endDate           DateTime?      @db.Date
+  totalHours        Float?
+  description       String?
+  skillsGained      String?
+  reflections       String?
+  dateCreated       DateTime       @default(now())
+
+  user     User                @relation(fields: [userId], references: [id])
+  sessions ExperienceSession[]
+
+  @@map("clinical_experiences")
+}
+
+model ExperienceSession {
+  id                  Int      @id @default(autoincrement())
+  experienceId        Int
+  sessionDate         DateTime @db.Date
+  startTime           DateTime @db.Time
+  endTime             DateTime @db.Time
+  hoursLogged         Float
+  activitiesPerformed String?
+  notes               String?
+  dateLogged          DateTime @default(now())
+
+  experience ClinicalExperience @relation(fields: [experienceId], references: [id])
+
+  @@map("experience_sessions")
+}
+
+model ExtracurricularActivity {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  activityName   String
+  organization   String?
+  rolePosition   String?
+  startDate      DateTime  @db.Date
+  endDate        DateTime? @db.Date
+  description    String?
+  achievements   String?
+  leadershipRole Boolean   @default(false)
+  reflections    String?
+  dateCreated    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("extracurricular_activities")
+}
+
+model Class {
+  id               Int              @id @default(autoincrement())
+  userId           Int
+  courseCode       String?
+  courseName       String
+  institution      String?
+  semester         String?
+  year             Int?
+  gradeReceived    String?
+  gradePoints      Decimal?         @db.Decimal(3, 2)
+  creditHours      Float?
+  professorName    String?
+  prereqType       PrereqType?
+  completionStatus CompletionStatus @default(PLANNED)
+  personalNotes    String?
+  dateAdded        DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("classes")
+}
+
+model ResearchExperience {
+  id                    Int       @id @default(autoincrement())
+  userId                Int
+  projectTitle          String
+  institution           String?
+  labName               String?
+  principalInvestigator String?
+  startDate             DateTime  @db.Date
+  endDate               DateTime? @db.Date
+  researchArea          String?
+  description           String?
+  skillsGained          String?
+  dateCreated           DateTime  @default(now())
+
+  user         User                  @relation(fields: [userId], references: [id])
+  publications ResearchPublication[]
+
+  @@map("research_experiences")
+}
+
+model ResearchPublication {
+  id               Int              @id @default(autoincrement())
+  researchId       Int
+  title            String
+  journalName      String?
+  publicationDate  DateTime?        @db.Date
+  authorshipType   AuthorshipType?
+  presentationType PresentationType @default(NONE)
+
+  research ResearchExperience @relation(fields: [researchId], references: [id])
+
+  @@map("research_publications")
+}
+
+model UserMcatTopicMastery {
+  id           Int          @id @default(autoincrement())
+  userId       Int
+  topicId      Int
+  masteryLevel MasteryLevel
+  notes        String?
+  lastUpdated  DateTime     @updatedAt
+
+  user  User      @relation(fields: [userId], references: [id])
+  topic McatTopic @relation(fields: [topicId], references: [id])
+
+  @@unique([userId, topicId])
+  @@map("user_mcat_topic_mastery")
+}
+
+// ============================================================
+// STUDY PLANS
+// ============================================================
+
+model StudyPlan {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  planName       String
+  targetTestDate DateTime @db.Date
+  dailyGoalMins  Int      @default(120)
+  focusSubjects  Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  isActive       Boolean  @default(true)
+
+  user User           @relation(fields: [userId], references: [id])
+  days StudyPlanDay[]
+
+  @@map("study_plans")
+}
+
+model StudyPlanDay {
+  id            Int       @id @default(autoincrement())
+  planId        Int
+  scheduledDate DateTime  @db.Date
+  subject       Subject
+  topicId       Int?
+  goalQuestions Int       @default(20)
+  goalMins      Int       @default(60)
+  isCompleted   Boolean   @default(false)
+  completedAt   DateTime?
+  notes         String?
+
+  plan  StudyPlan  @relation(fields: [planId], references: [id])
+  topic McatTopic? @relation(fields: [topicId], references: [id])
+
+  @@map("study_plan_days")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id               Int              @id @default(autoincrement())
+  userId           Int
+  notificationType NotificationType
+  title            String
+  body             String?
+  isRead           Boolean          @default(false)
+  actionUrl        String?
+  scheduledAt      DateTime?
+  sentAt           DateTime?
+  createdAt        DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id               Int       @id @default(autoincrement())
+  userId           Int       @unique
+  streakReminder   Boolean   @default(true)
+  dailyPractice    Boolean   @default(true)
+  studyPlanCheckin Boolean   @default(true)
+  examApproaching  Boolean   @default(true)
+  emailEnabled     Boolean   @default(true)
+  pushEnabled      Boolean   @default(false)
+  preferredTime    DateTime? @db.Time
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notification_preferences")
+}
+
+// ============================================================
+// USER SETTINGS
+// ============================================================
+
+model UserSetting {
+  id                    Int                   @id @default(autoincrement())
+  userId                Int                   @unique
+  preferredDifficulty   Int?
+  preferredSubjects     Json?
+  dailyQuestionGoal     Int                   @default(40)
+  showExplanationsAfter ShowExplanationsAfter @default(IMMEDIATELY)
+  theme                 Theme                 @default(SYSTEM)
+  fontSize              FontSize              @default(MEDIUM)
+  timerVisible          Boolean               @default(true)
+  targetScore           Int?
+  targetTestDate        DateTime?             @db.Date
+  updatedAt             DateTime              @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_settings")
+}
+
+// ============================================================
+// MED SCHOOL TRACKER
+// ============================================================
+
+model MedicalSchool {
+  id              Int         @id @default(autoincrement())
+  schoolName      String
+  locationCity    String?
+  locationState   String?
+  programType     ProgramType @default(MD)
+  avgAcceptedMcat Int?
+  avgAcceptedGpa  Decimal?    @db.Decimal(3, 2)
+  amcasCode       String?
+  websiteUrl      String?
+
+  userSchoolLists    UserSchoolList[]
+  personalStatements PersonalStatementDraft[]
+
+  @@map("medical_schools")
+}
+
+model UserSchoolList {
+  id                     Int                @id @default(autoincrement())
+  userId                 Int
+  schoolId               Int
+  listCategory           SchoolListCategory @default(TARGET)
+  applicationStatus      ApplicationStatus  @default(NOT_STARTED)
+  primarySubmittedDate   DateTime?          @db.Date
+  secondarySubmittedDate DateTime?          @db.Date
+  interviewDate          DateTime?          @db.Date
+  decisionDate           DateTime?          @db.Date
+  notes                  String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user   User          @relation(fields: [userId], references: [id])
+  school MedicalSchool @relation(fields: [schoolId], references: [id])
+
+  @@unique([userId, schoolId])
+  @@map("user_school_list")
+}
+
+// ============================================================
+// PERSONAL STATEMENTS
+// ============================================================
+
+model PersonalStatementDraft {
+  id            Int           @id @default(autoincrement())
+  userId        Int
+  draftTitle    String        @default("Untitled draft")
+  statementType StatementType @default(PRIMARY)
+  schoolId      Int?
+  promptText    String?
+  content       String?
+  wordCount     Int?
+  version       Int           @default(1)
+  status        DraftStatus   @default(DRAFT)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user     User                       @relation(fields: [userId], references: [id])
+  school   MedicalSchool?             @relation(fields: [schoolId], references: [id])
+  versions PersonalStatementVersion[]
+
+  @@map("personal_statement_drafts")
+}
+
+model PersonalStatementVersion {
+  id            Int      @id @default(autoincrement())
+  draftId       Int
+  versionNumber Int
+  content       String
+  wordCount     Int?
+  savedAt       DateTime @default(now())
+  note          String?
+
+  draft PersonalStatementDraft @relation(fields: [draftId], references: [id])
+
+  @@map("personal_statement_versions")
+}
+
+// ============================================================
+// STREAK TRACKING
+// ============================================================
+
+model UserStreak {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @unique
+  currentStreakDays Int       @default(0)
+  longestStreakDays Int       @default(0)
+  lastActiveDate    DateTime? @db.Date
+  streakStartedDate DateTime? @db.Date
+  totalActiveDays   Int       @default(0)
+  updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_streaks")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Subject {
+  biology
+  chemistry
+  physics
+  psychology
+  sociology
+  biochemistry
+  critical_analysis
+}
+
+enum QuestionType {
+  multiple_choice
+  true_false
+  passage_based
+  discrete
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  FLAGGED
+  REJECTED
+}
+
+enum ImprovementTrend {
+  IMPROVING
+  DECLINING
+  STABLE
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum SectionStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+enum FeedbackType {
+  FACTUALLY_INCORRECT
+  LOGIC_ERROR
+  TYPO
+  POOR_EXPLANATION
+  OTHER
+}
+
+enum BookmarkTag {
+  REVIEW_LATER
+  CONFUSED
+  IMPORTANT
+  MASTERED
+}
+
+enum ExperienceType {
+  SHADOWING
+  VOLUNTEERING
+  CLINICAL
+}
+
+enum PrereqType {
+  BIOLOGY
+  CHEMISTRY
+  PHYSICS
+  MATH
+  ENGLISH
+  OTHER
+}
+
+enum CompletionStatus {
+  COMPLETED
+  IN_PROGRESS
+  PLANNED
+}
+
+enum AuthorshipType {
+  FIRST
+  CO_AUTHOR
+  LAST
+}
+
+enum PresentationType {
+  NONE
+  POSTER
+  ORAL
+  WORKSHOP
+  OTHER
+}
+
+enum MasteryLevel {
+  KNOWN
+  NEEDS_PRACTICE
+  UNFAMILIAR
+}
+
+enum NotificationType {
+  STREAK_REMINDER
+  STUDY_PLAN_CHECKIN
+  DAILY_PRACTICE_POSTED
+  EXAM_DATE_APPROACHING
+  SCORE_MILESTONE
+  FEEDBACK_RESOLVED
+  GENERAL
+}
+
+enum ShowExplanationsAfter {
+  IMMEDIATELY
+  AFTER_QUIZ
+  NEVER
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum FontSize {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+enum ProgramType {
+  MD
+  DO
+  MD_PHD
+}
+
+enum SchoolListCategory {
+  REACH
+  TARGET
+  SAFETY
+  WITHDRAWN
+  ACCEPTED
+  REJECTED
+  WAITLISTED
+}
+
+enum ApplicationStatus {
+  NOT_STARTED
+  PRIMARY_SUBMITTED
+  SECONDARY_RECEIVED
+  SECONDARY_SUBMITTED
+  INTERVIEW_INVITED
+  INTERVIEW_COMPLETED
+  ACCEPTED
+  REJECTED
+  WAITLISTED
+  WITHDRAWN
+}
+
+enum StatementType {
+  PRIMARY
+  SECONDARY
+  WHY_SCHOOL
+  DIVERSITY
+  CHALLENGE
+  OTHER
+}
+
+enum DraftStatus {
+  DRAFT
+  IN_REVIEW
+  FINAL
+}
