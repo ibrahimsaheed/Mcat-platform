@@ -31,6 +31,11 @@ async function main() {
   // ── Clean existing data in reverse dependency order ──────────────
   // WHY: We must delete child rows before parents to avoid foreign key
   // constraint violations. Prisma's deleteMany handles this safely.
+  await prisma.userAnswerResponse.deleteMany();
+  await prisma.quizQuestion.deleteMany();
+  await prisma.userQuizAttempt.deleteMany();
+  await prisma.simulatedExamResponse.deleteMany();
+  await prisma.quiz.deleteMany();
   await prisma.questionTopicMap.deleteMany();
   await prisma.questionOption.deleteMany();
   await prisma.questionFeedback.deleteMany();
@@ -578,6 +583,106 @@ async function main() {
   }
 
   console.log(`  ✅ Created ${questionsData.length} questions with options and topic mappings`);
+
+  // ================================================================
+  // 4. QUIZZES
+  // ================================================================
+  // CONCEPT: Quizzes group questions into timed practice sets. Each quiz
+  // has a name, description, time limit, and links to questions through
+  // QuizQuestion records.
+  //
+  // WHY: We fetch the questions we just created by their topic subjects to
+  // build focused practice sets. This avoids hardcoding IDs which would
+  // break if the seed order changes.
+
+  // Fetch all questions with their topic maps to sort by subject.
+  const allQuestions = await prisma.question.findMany({
+    where: { isActive: true },
+    include: {
+      topicMaps: { include: { topic: true } },
+    },
+    orderBy: { id: "asc" },
+  });
+
+  // Group questions by their topic subject
+  function questionsBySubject(subject: string) {
+    return allQuestions.filter((q) =>
+      q.topicMaps.some((tm) => tm.topic.subject === subject)
+    );
+  }
+
+  const bioQuestions = questionsBySubject("biology");
+  const chemQuestions = questionsBySubject("chemistry");
+  const physicsQuestions = questionsBySubject("physics");
+  const biochemQuestions = questionsBySubject("biochemistry");
+  const psychQuestions = questionsBySubject("psychology");
+  const socQuestions = questionsBySubject("sociology");
+
+  // Quiz 1: Biology Fundamentals — 8 biology questions
+  const bioQuiz = await prisma.quiz.create({
+    data: {
+      quizName: "Biology Fundamentals",
+      description: "Core biology concepts tested on the MCAT",
+      totalQuestions: 8,
+      totalPoints: 8,
+      timeLimit: 480,
+      isActive: true,
+      quizQuestions: {
+        create: bioQuestions.slice(0, 8).map((q, i) => ({
+          questionId: q.id,
+          questionOrder: i + 1,
+        })),
+      },
+    },
+  });
+  console.log(`  ✅ Created quiz "${bioQuiz.quizName}" with ${bioQuestions.slice(0, 8).length} bio questions`);
+
+  // Quiz 2: Chemistry Essentials — 5 chemistry + 2 physics questions
+  const chemQuizQuestions = [...chemQuestions.slice(0, 5), ...physicsQuestions.slice(0, 3)];
+  const chemQuiz = await prisma.quiz.create({
+    data: {
+      quizName: "Chemistry Essentials",
+      description: "Key chemistry concepts for MCAT prep",
+      totalQuestions: 8,
+      totalPoints: 8,
+      timeLimit: 480,
+      isActive: true,
+      quizQuestions: {
+        create: chemQuizQuestions.map((q, i) => ({
+          questionId: q.id,
+          questionOrder: i + 1,
+        })),
+      },
+    },
+  });
+  console.log(`  ✅ Created quiz "${chemQuiz.quizName}" with ${chemQuizQuestions.length} chem/physics questions`);
+
+  // Quiz 3: Mixed Practice Set — 3 psych/soc + 2 biochem + 2 bio + 2 chem
+  const mixedQuestions = [
+    ...psychQuestions.slice(0, 2),
+    ...socQuestions.slice(0, 2),
+    ...biochemQuestions.slice(0, 2),
+    ...bioQuestions.slice(0, 1),
+    ...chemQuestions.slice(0, 2),
+  ];
+  const mixedQuiz = await prisma.quiz.create({
+    data: {
+      quizName: "Mixed Practice Set",
+      description: "Mixed questions across all subjects",
+      totalQuestions: 9,
+      totalPoints: 9,
+      timeLimit: 540,
+      isActive: true,
+      quizQuestions: {
+        create: mixedQuestions.map((q, i) => ({
+          questionId: q.id,
+          questionOrder: i + 1,
+        })),
+      },
+    },
+  });
+  console.log(`  ✅ Created quiz "${mixedQuiz.quizName}" with ${mixedQuestions.length} mixed questions`);
+
   console.log("🌱 Seed complete!");
 }
 

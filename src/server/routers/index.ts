@@ -3,6 +3,7 @@ import { z } from "zod";
 import { healthRouter } from "./health.router";
 import { authRouter } from "./auth.router";
 import { questionRouter } from "./question.router";
+import { quizRouter } from "./quiz.router";
 
 /**
  * Echo procedure — validates input/output pipeline works.
@@ -27,6 +28,7 @@ export const appRouter = router({
   health: healthRouter,
   auth: authRouter,
   question: questionRouter,
+  quiz: quizRouter,
   echo,
 });
 
